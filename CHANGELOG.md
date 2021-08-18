@@ -12,3 +12,11 @@
   - For improving chatbot dialog flow and integrating specialty bots:
     - To allow specialty chatbot to ask main bot for answers if it is unable to find an answer, `FALLBACK_TO_MAIN_BOT_WHEN_ANSWER_NOT_FOUND = true`
     - To get specialty chatbot to autoexit and go back to main bot if it cannot find an answer, `AUTO_EXIT_SPECIALTY_BOT_WHEN_ANSWER_NOT_FOUND = true`
+
+## [1.0.1]
+- Experimentation with Kendra Indexing features - Added files and implemented features to automatically scrape a URL for json metadata to automatically index Kendra documents. This is in developmental stage. 
+- Files/components added:
+  - Frontend integration for the scraper (additional page & APIs)
+  - API gateway resources for the backend API endpoint of the scrapers
+  - Lambda functions for the scrapers: Three scrapers were created, for scraping AWS content: case-study, blog, and FAQ
+- To use this feature, set up a Kendra index first, create the document source and create the bucket and set `DOCUMENT_BUCKETNAME="YOUR_KENDRA_BUCKET"` and `KENDRA_WEB_PAGE_INDEX="KENDRA_INDEX_FOR_YOUR_DOCUMENTS"` in Content Designer 
