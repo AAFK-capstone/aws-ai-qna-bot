@@ -16,6 +16,9 @@ This repository contains a variant of the QnABot. Additional features implemente
 - Allow specialty bot to fallback to mainbot to look for answers or search results when it is unable to answer.
 - Allow specialty bot to autoexit the specialty bot when it cannot find an answer.
 
+**The following is the latest feature list version 1.0.1** 
+- Added additional lambda functions for webscraping metadata. This feature may not be very useful to users as it is configured to suit certain APIs. Users' may edit this to suit their own webscraping/indexing needs.
+
 **The following is the latest feature list for the original QnABot as of the day of clone** 
 - Support for Lex V2 Elicit response bots
 - Config import/export
