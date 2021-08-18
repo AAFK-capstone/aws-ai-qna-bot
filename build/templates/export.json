@@ -1,0 +1,1490 @@
+{
+  "Resources": {
+    "ExportTriggerFromS3": {
+      "Type": "Custom::S3Lambda",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "ExportBucket"},
+        "NotificationConfiguration": {
+          "LambdaFunctionConfigurations": [
+            {
+              "LambdaFunctionArn": {"Fn::GetAtt": ["ExportStepLambda", "Arn"]},
+              "Events": ["s3:ObjectCreated:*"],
+              "Filter": {
+                "Key": {"FilterRules": [{"Name": "prefix", "Value": "status"}]}
+              }
+            },
+            {
+              "LambdaFunctionArn": {"Fn::GetAtt": ["KendraSyncLambda", "Arn"]},
+              "Events": ["s3:ObjectCreated:*"],
+              "Filter": {
+                "Key": {
+                  "FilterRules": [{"Name": "prefix", "Value": "kendra-data"}]
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ExportStepPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {"Fn::GetAtt": ["ExportStepLambda", "Arn"]},
+        "Action": "lambda:InvokeFunction",
+        "Principal": "s3.amazonaws.com",
+        "SourceAccount": {"Ref": "AWS::AccountId"},
+        "SourceArn": {"Fn::Sub": "arn:aws:s3:::${ExportBucket}"}
+      }
+    },
+    "KendraSyncPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {"Fn::GetAtt": ["KendraSyncLambda", "Arn"]},
+        "Action": "lambda:InvokeFunction",
+        "Principal": "s3.amazonaws.com",
+        "SourceAccount": {"Ref": "AWS::AccountId"},
+        "SourceArn": {"Fn::Sub": "arn:aws:s3:::${ExportBucket}"}
+      }
+    },
+    "ExportCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/export.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "ConnectCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/connect.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "ConnectLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/connect.zip"},
+          "S3ObjectVersion": {"Ref": "ConnectCodeVersion"}
+        },
+        "Environment": {
+          "Variables": {
+            "outputBucket": {"Ref": "ExportBucket"},
+            "s3Prefix": "connect/",
+            "accountId": {"Ref": "AWS::AccountId"},
+            "region": {"Ref": "AWS::Region"},
+            "LexVersion": {"Ref": "LexVersion"},
+            "fallBackIntent": {"Ref": "FallbackIntent"},
+            "intent": {"Ref": "Intent"},
+            "lexBot": {"Ref": "BotName"},
+            "LexV2BotName": {"Ref": "LexV2BotName"},
+            "LexV2BotId": {"Ref": "LexV2BotId"},
+            "LexV2BotAlias": {"Ref": "LexV2BotAlias"},
+            "LexV2BotAliasId": {"Ref": "LexV2BotAliasId"},
+            "LexV2BotLocaleIds": {"Ref": "LexV2BotLocaleIds"}
+          }
+        },
+        "Handler": "index.handler",
+        "MemorySize": "1024",
+        "Role": {"Fn::GetAtt": ["ExportRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 300,
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Tags": [{"Key": "Type", "Value": "Export"}]
+      }
+    },
+    "ConnectApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "ApiRootResourceId"},
+        "PathPart": "connect",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "InvokePermissionConnectLambda": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Fn::GetAtt": ["ConnectLambda", "Arn"]},
+        "Principal": "apigateway.amazonaws.com"
+      }
+    },
+    "Deployment": {
+      "Type": "Custom::ApiDeployment",
+      "DeletionPolicy": "Retain",
+      "DependsOn": [
+        "ConnectGet",
+        "ConnectApiResource",
+        "InvokePermissionConnectLambda",
+        "TranslatePost",
+        "TranslateApiResource",
+        "TranslateApiRootResource",
+        "KendraCrawlerPost",
+        "KendraCrawlerApiResource",
+        "KendraCrawlerStatusRootApiResource",
+        "InvokePermissionTranslateLambda",
+        "KendraCrawlerStatusGet",
+        "KendraFaqScraperApiResource",
+        "KendraFaqScraperPostMethod",
+        "InvokePermissionKendraFaqScraperGetLambda",
+        "KendraBlogScraperApiResource",
+        "KendraBlogScraperPostMethod",
+        "InvokePermissionKendraBlogScraperGetLambda",
+        "KendraCsScraperApiResource",
+        "KendraCsScraperPostMethod",
+        "InvokePermissionKendraCsScraperGetLambda"
+      ],
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "restApiId": {"Ref": "Api"},
+        "buildDate": "2021-08-17T02:31:33.838Z",
+        "stage": "prod",
+        "ApiDeploymentId": {"Ref": "ApiDeploymentId"},
+        "Encryption": {"Ref": "Encryption"}
+      }
+    },
+    "ConnectGet": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "AWS_IAM",
+        "HttpMethod": "GET",
+        "RestApiId": {"Ref": "Api"},
+        "ResourceId": {"Ref": "ConnectApiResource"},
+        "Integration": {
+          "Type": "AWS",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:aws:apigateway:",
+                {"Ref": "AWS::Region"},
+                ":lambda:path/2015-03-31/functions/",
+                {"Fn::GetAtt": ["ConnectLambda", "Arn"]},
+                "/invocations"
+              ]
+            ]
+          },
+          "IntegrationResponses": [{"StatusCode": 200}]
+        },
+        "MethodResponses": [{"StatusCode": 200}]
+      }
+    },
+    "SyncCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/export.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "ExportStepLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/export.zip"},
+          "S3ObjectVersion": {"Ref": "ExportCodeVersion"}
+        },
+        "Environment": {
+          "Variables": {
+            "ES_INDEX": {"Ref": "VarIndex"},
+            "ES_ENDPOINT": {"Ref": "EsEndpoint"},
+            "ES_PROXY": {"Ref": "EsProxyLambda"}
+          }
+        },
+        "Handler": "index.step",
+        "MemorySize": "1024",
+        "Role": {"Fn::GetAtt": ["ExportRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 300,
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Tags": [{"Key": "Type", "Value": "Export"}]
+      }
+    },
+    "ExportRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+          "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess",
+          {"Ref": "ExportPolicy"}
+        ]
+      }
+    },
+    "ExportPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:*"],
+              "Resource": [{"Fn::Sub": "arn:aws:s3:::${ExportBucket}*"}]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["lambda:InvokeFunction"],
+              "Resource": [{"Ref": "EsProxyLambda"}]
+            }
+          ]
+        }
+      }
+    },
+    "ExportClear": {
+      "Type": "Custom::S3Clear",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "ExportBucket"}
+      }
+    },
+    "KendraSyncLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/export.zip"},
+          "S3ObjectVersion": {"Ref": "SyncCodeVersion"}
+        },
+        "Environment": {
+          "Variables": {
+            "DEFAULT_SETTINGS_PARAM": {"Ref": "DefaultQnABotSettings"},
+            "CUSTOM_SETTINGS_PARAM": {"Ref": "CustomQnABotSettings"},
+            "OUTPUT_S3_BUCKET": {"Ref": "ExportBucket"},
+            "KENDRA_ROLE": {"Fn::GetAtt": ["KendraS3Role", "Arn"]},
+            "REGION": {"Ref": "AWS::Region"}
+          }
+        },
+        "Handler": "kendraSync.performSync",
+        "MemorySize": "1024",
+        "Role": {"Fn::GetAtt": ["KendraSyncRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 300,
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Tags": [{"Key": "Type", "Value": "Sync"}]
+      }
+    },
+    "KendraSyncRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            },
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "kendra.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+          "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess",
+          {"Ref": "KendraSyncPolicy"}
+        ]
+      }
+    },
+    "KendraSyncPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "s3:PutObject",
+                "s3:Get*",
+                "s3:List*",
+                "kendra:CreateFaq",
+                "kendra:ListFaqs",
+                "kendra:TagResource",
+                "kendra:DeleteFaq",
+                "kendra:DescribeFaq",
+                "iam:passRole",
+                "ssm:getParameter"
+              ],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:kendra:${AWS::Region}:${AWS::AccountId}:index/*"
+                },
+                {
+                  "Fn::Sub": "arn:aws:kendra:${AWS::Region}:${AWS::AccountId}:index/*/faq/*"
+                },
+                {"Fn::Sub": "arn:aws:s3:::${ExportBucket}"},
+                {"Fn::Sub": "arn:aws:s3:::${ExportBucket}/*"},
+                {"Fn::GetAtt": ["KendraS3Role", "Arn"]},
+                {"Fn::Sub": "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:*"}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "KendraS3Role": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            },
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "kendra.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+          "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess",
+          {"Ref": "KendraS3Policy"}
+        ]
+      }
+    },
+    "TranslatePost": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "AWS_IAM",
+        "HttpMethod": "POST",
+        "RestApiId": {"Ref": "Api"},
+        "ResourceId": {"Ref": "TranslateApiResource"},
+        "Integration": {
+          "Type": "AWS_PROXY",
+          "IntegrationHttpMethod": "POST",
+          "RequestTemplates": {
+            "application/x-www-form-urlencoded": "{\"body\":$input.json('$')}"
+          },
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:aws:apigateway:",
+                {"Ref": "AWS::Region"},
+                ":lambda:path/2015-03-31/functions/",
+                {"Fn::GetAtt": ["TranslateLambda", "Arn"]},
+                "/invocations"
+              ]
+            ]
+          },
+          "IntegrationResponses": [{"StatusCode": 200}]
+        },
+        "MethodResponses": [{"StatusCode": 200}]
+      }
+    },
+    "TranslateRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+          {"Ref": "TranslatePolicy"}
+        ]
+      }
+    },
+    "TranslateCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/translate.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "TranslateLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/translate.zip"},
+          "S3ObjectVersion": {"Ref": "TranslateCodeVersion"}
+        },
+        "Environment": {"Variables": {"outputBucket": {"Ref": "ExportBucket"}}},
+        "Handler": "index.handler",
+        "MemorySize": "1024",
+        "Role": {"Fn::GetAtt": ["TranslateRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 300,
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Tags": [{"Key": "Type", "Value": "Export"}]
+      }
+    },
+    "TranslatePolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "translate:ImportTerminology",
+                "translate:ListTerminologies"
+              ],
+              "Resource": ["*"]
+            }
+          ]
+        }
+      }
+    },
+    "TranslateApiRootResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "ApiRootResourceId"},
+        "PathPart": "translate",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "TranslateApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "TranslateApiRootResource"},
+        "PathPart": "{proxy+}",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "InvokePermissionTranslateLambda": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Fn::GetAtt": ["TranslateLambda", "Arn"]},
+        "Principal": "apigateway.amazonaws.com"
+      }
+    },
+    "KendraCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/kendra-crawler.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "KendraCrawlerApiRootResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "ApiRootResourceId"},
+        "PathPart": "crawler",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "KendraCrawlerApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "KendraCrawlerApiRootResource"},
+        "PathPart": "start",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "KendraCrawlerStatusGet": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "AWS_IAM",
+        "HttpMethod": "POST",
+        "RestApiId": {"Ref": "Api"},
+        "ResourceId": {"Ref": "KendraCrawlerStatusRootApiResource"},
+        "Integration": {
+          "Type": "AWS_PROXY",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:aws:apigateway:",
+                {"Ref": "AWS::Region"},
+                ":lambda:path/2015-03-31/functions/",
+                {"Fn::GetAtt": ["KendraCrawlerLambda", "Arn"]},
+                "/invocations"
+              ]
+            ]
+          },
+          "IntegrationResponses": [{"StatusCode": 200}]
+        },
+        "MethodResponses": [{"StatusCode": 200}]
+      }
+    },
+    "InvokePermissionKendraCrawlerStatusGetLambda": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Fn::GetAtt": ["KendraCrawlerLambda", "Arn"]},
+        "Principal": "apigateway.amazonaws.com"
+      }
+    },
+    "KendraSnsLambdaSubscription": {
+      "Type": "AWS::SNS::Subscription",
+      "Properties": {
+        "Endpoint": {"Fn::GetAtt": ["KendraCrawlerLambda", "Arn"]},
+        "Protocol": "lambda",
+        "TopicArn": {"Ref": "KendraCrawlerSnsTopic"}
+      }
+    },
+    "KendraTopicApiGateRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": ["apigateway.amazonaws.com"]},
+              "Action": ["sts:AssumeRole"]
+            }
+          ]
+        },
+        "Path": "/",
+        "Policies": [
+          {
+            "PolicyName": "GatewayRolePolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": ["sns:Publish"],
+                  "Resource": {"Ref": "KendraCrawlerSnsTopic"}
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": [
+                    "logs:PutLogEvents",
+                    "logs:CreateLogGroup",
+                    "logs:CreateLogStream"
+                  ],
+                  "Resource": "*"
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "KendraCrawlerPost": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "AWS_IAM",
+        "HttpMethod": "POST",
+        "RequestParameters": {
+          "method.request.querystring.message": false,
+          "method.request.querystring.subject": false,
+          "method.request.querystring.topic": false
+        },
+        "Integration": {
+          "Type": "AWS",
+          "Credentials": {"Fn::GetAtt": ["KendraTopicApiGateRole", "Arn"]},
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:aws:apigateway:",
+                {"Ref": "AWS::Region"},
+                ":sns:action/Publish"
+              ]
+            ]
+          },
+          "IntegrationHttpMethod": "POST",
+          "RequestParameters": {
+            "integration.request.querystring.TopicArn": "method.request.querystring.topic",
+            "integration.request.querystring.Subject": "method.request.querystring.subject",
+            "integration.request.querystring.Message": "method.request.querystring.message"
+          },
+          "IntegrationResponses": [
+            {
+              "StatusCode": 200,
+              "ResponseTemplates": {"application/json": "{\"status\":\"OK\"}"}
+            }
+          ]
+        },
+        "MethodResponses": [{"StatusCode": 200}],
+        "RestApiId": {"Ref": "Api"},
+        "ResourceId": {"Ref": "KendraCrawlerApiResource"}
+      }
+    },
+    "InvokePermissionKendraCrawlerLambda": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Fn::GetAtt": ["KendraCrawlerLambda", "Arn"]},
+        "SourceArn": {"Ref": "KendraCrawlerSnsTopic"},
+        "Principal": "sns.amazonaws.com"
+      }
+    },
+    "CloudWatchEventRule": {
+      "Type": "AWS::Events::Rule",
+      "Properties": {
+        "Description": "Parameter Setting Change",
+        "EventPattern": {
+          "source": ["aws.ssm"],
+          "detail-type": ["Parameter Store Change"],
+          "detail": {
+            "name": [{"Ref": "CustomQnABotSettings"}],
+            "operation": ["Update"]
+          }
+        },
+        "State": "ENABLED",
+        "Targets": [
+          {
+            "Arn": {"Fn::GetAtt": ["KendraCrawlerCWRuleUpdaterLambda", "Arn"]},
+            "Id": "KendraCrawler"
+          }
+        ]
+      }
+    },
+    "ParameterChangeRuleKendraCrawlerPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {
+          "Fn::GetAtt": ["KendraCrawlerCWRuleUpdaterLambda", "Arn"]
+        },
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {"Fn::GetAtt": ["CloudWatchEventRule", "Arn"]}
+      }
+    },
+    "KendraCrawlerScheduleRule": {
+      "Type": "AWS::Events::Rule",
+      "DependsOn": "CloudWatchEventRule",
+      "Properties": {
+        "Description": "Run Kendra Web Crawler based on a schedule",
+        "ScheduleExpression": "rate(1 day)",
+        "Name": {
+          "Fn::Join": [
+            "-",
+            [
+              "KendraCrawlerRule",
+              {
+                "Fn::Select": [
+                  2,
+                  {"Fn::Split": ["-", {"Ref": "DefaultQnABotSettings"}]}
+                ]
+              }
+            ]
+          ]
+        },
+        "State": "DISABLED",
+        "Targets": [
+          {
+            "Arn": {"Fn::GetAtt": ["KendraCrawlerLambda", "Arn"]},
+            "Id": "KendraCrawler"
+          }
+        ]
+      }
+    },
+    "KendraCrawlerSchedulePermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {"Fn::GetAtt": ["KendraCrawlerLambda", "Arn"]},
+        "Action": "lambda:InvokeFunction",
+        "Principal": "events.amazonaws.com",
+        "SourceArn": {"Fn::GetAtt": ["KendraCrawlerScheduleRule", "Arn"]}
+      }
+    },
+    "KendraCrawlerStatusRootApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "KendraCrawlerApiRootResource"},
+        "PathPart": "{proxy+}",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "KendraCrawlerLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/kendra-crawler.zip"},
+          "S3ObjectVersion": {"Ref": "KendraCodeVersion"}
+        },
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Environment": {
+          "Variables": {
+            "DEFAULT_SETTINGS_PARAM": {"Ref": "DefaultQnABotSettings"},
+            "CUSTOM_SETTINGS_PARAM": {"Ref": "CustomQnABotSettings"},
+            "DATASOURCE_NAME": {
+              "Fn::Join": [
+                "-",
+                [
+                  "QNABotKendraCrawler",
+                  {
+                    "Fn::Select": [
+                      2,
+                      {"Fn::Split": ["-", {"Ref": "DefaultQnABotSettings"}]}
+                    ]
+                  }
+                ]
+              ]
+            }
+          }
+        },
+        "Handler": "index.handler",
+        "MemorySize": "2048",
+        "Role": {"Fn::GetAtt": ["KendraCrawlerRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 900,
+        "Tags": [{"Key": "Type", "Value": "Export"}]
+      }
+    },
+    "KendraCrawlerRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+          {"Ref": "KendraCrawlerPolicy"}
+        ]
+      }
+    },
+    "KendraCrawlerPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "kendra:ListDataSources",
+                "kendra:ListDataSourceSyncJobs",
+                "kendra:DescribeDataSource",
+                "kendra:BatchPutDocument",
+                "kendra:CreateDataSource",
+                "kendra:StartDataSourceSyncJob",
+                "kendra:StopDataSourceSyncJob",
+                "kendra:UpdateDataSource"
+              ],
+              "Resource": ["*"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["ssm:GetParameter"],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:ssm:",
+                      {"Ref": "AWS::Region"},
+                      ":",
+                      {"Ref": "AWS::AccountId"},
+                      ":parameter/",
+                      {"Ref": "CustomQnABotSettings"}
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:ssm:",
+                      {"Ref": "AWS::Region"},
+                      ":",
+                      {"Ref": "AWS::AccountId"},
+                      ":parameter/",
+                      {"Ref": "DefaultQnABotSettings"}
+                    ]
+                  ]
+                }
+              ]
+            },
+            {"Effect": "Allow", "Action": "s3:*", "Resource": "*"}
+          ]
+        }
+      }
+    },
+    "KendraCrawlerCWRuleUpdaterCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {
+          "Fn::Sub": "${BootstrapPrefix}/lambda/kendra-crawler-cwrule-updater.zip"
+        },
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "KendraS3Policy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:GetObject", "kendra:CreateFaq"],
+              "Resource": [
+                {
+                  "Fn::Sub": "arn:aws:kendra:${AWS::Region}:${AWS::AccountId}:index/*"
+                },
+                {"Fn::Sub": "arn:aws:s3:::${ExportBucket}"},
+                {"Fn::Sub": "arn:aws:s3:::${ExportBucket}/*"}
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "KendraCrawlerCWRuleUpdaterLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {
+            "Fn::Sub": "${BootstrapPrefix}/lambda/kendra-crawler-cwrule-updater.zip"
+          },
+          "S3ObjectVersion": {"Ref": "KendraCrawlerCWRuleUpdaterCodeVersion"}
+        },
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Environment": {
+          "Variables": {
+            "DEFAULT_SETTINGS_PARAM": {"Ref": "DefaultQnABotSettings"},
+            "CUSTOM_SETTINGS_PARAM": {"Ref": "CustomQnABotSettings"},
+            "CLOUDWATCH_RULENAME": {
+              "Fn::Join": [
+                "-",
+                [
+                  "KendraCrawlerRule",
+                  {
+                    "Fn::Select": [
+                      2,
+                      {"Fn::Split": ["-", {"Ref": "DefaultQnABotSettings"}]}
+                    ]
+                  }
+                ]
+              ]
+            }
+          }
+        },
+        "Handler": "index.handler",
+        "MemorySize": "2048",
+        "Role": {"Fn::GetAtt": ["KendraCrawlerCWRuleUpdaterRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 900,
+        "Tags": [{"Key": "Type", "Value": "Export"}]
+      }
+    },
+    "KendraCrawlerCWRuleUpdaterRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+          {"Ref": "KendraCrawlerCWRuleUpdaterrRolePolicy"}
+        ]
+      }
+    },
+    "KendraCrawlerCWRuleUpdaterrRolePolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": [
+                "kendra:ListDataSources",
+                "kendra:ListDataSourceSyncJobs",
+                "kendra:DescribeDataSource",
+                "kendra:BatchPutDocument",
+                "kendra:CreateDataSource",
+                "kendra:StartDataSourceSyncJob",
+                "kendra:StopDataSourceSyncJob",
+                "kendra:UpdateDataSource"
+              ],
+              "Resource": ["*"]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["ssm:GetParameter"],
+              "Resource": [
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:ssm:",
+                      {"Ref": "AWS::Region"},
+                      ":",
+                      {"Ref": "AWS::AccountId"},
+                      ":parameter/",
+                      {"Ref": "CustomQnABotSettings"}
+                    ]
+                  ]
+                },
+                {
+                  "Fn::Join": [
+                    "",
+                    [
+                      "arn:aws:ssm:",
+                      {"Ref": "AWS::Region"},
+                      ":",
+                      {"Ref": "AWS::AccountId"},
+                      ":parameter/",
+                      {"Ref": "DefaultQnABotSettings"}
+                    ]
+                  ]
+                }
+              ]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["events:DescribeRule", "events:PutRule"],
+              "Resource": {
+                "Fn::Join": [
+                  "",
+                  [
+                    "arn:aws:events:",
+                    {"Ref": "AWS::Region"},
+                    ":",
+                    {"Ref": "AWS::AccountId"},
+                    ":rule/",
+                    "KendraCrawlerRule-",
+                    {
+                      "Fn::Select": [
+                        2,
+                        {"Fn::Split": ["-", {"Ref": "DefaultQnABotSettings"}]}
+                      ]
+                    }
+                  ]
+                ]
+              }
+            }
+          ]
+        }
+      }
+    },
+    "KendraFaqScraperApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "KendraCrawlerApiRootResource"},
+        "PathPart": "runFaqScraper",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "KendraFaqScraperPostMethod": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "AWS_IAM",
+        "HttpMethod": "POST",
+        "RestApiId": {"Ref": "Api"},
+        "ResourceId": {"Ref": "KendraFaqScraperApiResource"},
+        "Integration": {
+          "Type": "AWS",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:aws:apigateway:",
+                {"Ref": "AWS::Region"},
+                ":lambda:path/2015-03-31/functions/",
+                {"Fn::GetAtt": ["FaqScraperLambda", "Arn"]},
+                "/invocations"
+              ]
+            ]
+          },
+          "IntegrationResponses": [{"StatusCode": 200}]
+        },
+        "MethodResponses": [{"StatusCode": 200}]
+      }
+    },
+    "InvokePermissionKendraFaqScraperGetLambda": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Fn::GetAtt": ["FaqScraperLambda", "Arn"]},
+        "Principal": "apigateway.amazonaws.com"
+      }
+    },
+    "KendraBlogScraperApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "KendraCrawlerApiRootResource"},
+        "PathPart": "runBlogScraper",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "KendraBlogScraperPostMethod": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "AWS_IAM",
+        "HttpMethod": "POST",
+        "RestApiId": {"Ref": "Api"},
+        "ResourceId": {"Ref": "KendraBlogScraperApiResource"},
+        "Integration": {
+          "Type": "AWS",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:aws:apigateway:",
+                {"Ref": "AWS::Region"},
+                ":lambda:path/2015-03-31/functions/",
+                {"Fn::GetAtt": ["BlogScraperLambda", "Arn"]},
+                "/invocations"
+              ]
+            ]
+          },
+          "IntegrationResponses": [{"StatusCode": 200}]
+        },
+        "MethodResponses": [{"StatusCode": 200}]
+      }
+    },
+    "InvokePermissionKendraBlogScraperGetLambda": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Fn::GetAtt": ["BlogScraperLambda", "Arn"]},
+        "Principal": "apigateway.amazonaws.com"
+      }
+    },
+    "KendraCsScraperApiResource": {
+      "Type": "AWS::ApiGateway::Resource",
+      "Properties": {
+        "ParentId": {"Ref": "KendraCrawlerApiRootResource"},
+        "PathPart": "runCaseStudyScraper",
+        "RestApiId": {"Ref": "Api"}
+      }
+    },
+    "KendraCsScraperPostMethod": {
+      "Type": "AWS::ApiGateway::Method",
+      "Properties": {
+        "AuthorizationType": "AWS_IAM",
+        "HttpMethod": "POST",
+        "RestApiId": {"Ref": "Api"},
+        "ResourceId": {"Ref": "KendraCsScraperApiResource"},
+        "Integration": {
+          "Type": "AWS",
+          "IntegrationHttpMethod": "POST",
+          "Uri": {
+            "Fn::Join": [
+              "",
+              [
+                "arn:aws:apigateway:",
+                {"Ref": "AWS::Region"},
+                ":lambda:path/2015-03-31/functions/",
+                {"Fn::GetAtt": ["CaseStudyScraperLambda", "Arn"]},
+                "/invocations"
+              ]
+            ]
+          },
+          "IntegrationResponses": [{"StatusCode": 200}]
+        },
+        "MethodResponses": [{"StatusCode": 200}]
+      }
+    },
+    "InvokePermissionKendraCsScraperGetLambda": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "Action": "lambda:InvokeFunction",
+        "FunctionName": {"Fn::GetAtt": ["CaseStudyScraperLambda", "Arn"]},
+        "Principal": "apigateway.amazonaws.com"
+      }
+    },
+    "FaqScraperCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/faq-scraper.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "FaqScraperLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/faq-scraper.zip"},
+          "S3ObjectVersion": {"Ref": "FaqScraperCodeVersion"}
+        },
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Environment": {
+          "Variables": {
+            "DEFAULT_SETTINGS_PARAM": {"Ref": "DefaultQnABotSettings"},
+            "CUSTOM_SETTINGS_PARAM": {"Ref": "CustomQnABotSettings"}
+          }
+        },
+        "Layers": [{"Ref": "PythonFasLambdaLayer"}],
+        "Handler": "lambda_function.lambda_handler",
+        "MemorySize": "2048",
+        "Role": {"Fn::GetAtt": ["KendraCrawlerRole", "Arn"]},
+        "Runtime": "python3.8",
+        "Timeout": 900,
+        "Tags": [{"Key": "Type", "Value": "Export"}]
+      }
+    },
+    "CaseStudyScraperCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/case-study-scraper.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "CaseStudyScraperLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {
+            "Fn::Sub": "${BootstrapPrefix}/lambda/case-study-scraper.zip"
+          },
+          "S3ObjectVersion": {"Ref": "CaseStudyScraperCodeVersion"}
+        },
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Environment": {
+          "Variables": {
+            "DEFAULT_SETTINGS_PARAM": {"Ref": "DefaultQnABotSettings"},
+            "CUSTOM_SETTINGS_PARAM": {"Ref": "CustomQnABotSettings"},
+            "DOCUMENT_PREFIX": "documents/case-studies",
+            "CASE_STUDY_CSV_PREFIX": "csv",
+            "KENDRA_CASE_STUDY_DATA_SOURCE_NAME": "case-studies"
+          }
+        },
+        "Handler": "lambda_function.lambda_handler",
+        "MemorySize": "2048",
+        "Role": {"Fn::GetAtt": ["KendraCrawlerRole", "Arn"]},
+        "Runtime": "python3.7",
+        "Layers": [{"Ref": "PythonLambdaLayer"}],
+        "Timeout": 900,
+        "Tags": [{"Key": "Type", "Value": "Export"}]
+      }
+    },
+    "BlogScraperCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/blog-scraper.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "BlogScraperLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/blog-scraper.zip"},
+          "S3ObjectVersion": {"Ref": "BlogScraperCodeVersion"}
+        },
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Environment": {
+          "Variables": {
+            "DEFAULT_SETTINGS_PARAM": {"Ref": "DefaultQnABotSettings"},
+            "CUSTOM_SETTINGS_PARAM": {"Ref": "CustomQnABotSettings"},
+            "BLOG_CSV_PREFIX": "csv",
+            "DOCUMENT_PREFIX": "documents/blogs",
+            "KENDRA_BLOG_DATA_SOURCE_NAME": "blogs"
+          }
+        },
+        "Layers": [{"Ref": "PythonLambdaLayer"}],
+        "Handler": "lambda_function.lambda_handler",
+        "MemorySize": "2048",
+        "Role": {"Fn::GetAtt": ["KendraCrawlerRole", "Arn"]},
+        "Runtime": "python3.7",
+        "Timeout": 900,
+        "Tags": [{"Key": "Type", "Value": "Export"}]
+      }
+    },
+    "PythonCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/aws-python.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "PythonLambdaLayer": {
+      "Type": "AWS::Lambda::LayerVersion",
+      "Properties": {
+        "Content": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/aws-python.zip"},
+          "S3ObjectVersion": {"Ref": "PythonCodeVersion"}
+        },
+        "LayerName": {
+          "Fn::Join": [
+            "-",
+            [
+              "Python",
+              {
+                "Fn::Select": [
+                  2,
+                  {"Fn::Split": ["-", {"Ref": "DefaultQnABotSettings"}]}
+                ]
+              }
+            ]
+          ]
+        },
+        "CompatibleRuntimes": ["python3.7"]
+      }
+    },
+    "PythonFasCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/aws-fas-python.zip"},
+        "BuildDate": "2021-08-17T02:31:33.838Z"
+      }
+    },
+    "PythonFasLambdaLayer": {
+      "Type": "AWS::Lambda::LayerVersion",
+      "Properties": {
+        "Content": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/aws-fas-python.zip"},
+          "S3ObjectVersion": {"Ref": "PythonFasCodeVersion"}
+        },
+        "LayerName": {
+          "Fn::Join": [
+            "-",
+            [
+              "PythonFas",
+              {
+                "Fn::Select": [
+                  2,
+                  {"Fn::Split": ["-", {"Ref": "DefaultQnABotSettings"}]}
+                ]
+              }
+            ]
+          ]
+        },
+        "CompatibleRuntimes": ["python3.8"]
+      }
+    }
+  },
+  "Conditions": {
+    "VPCEnabled": {
+      "Fn::Not": [{"Fn::Equals": ["", {"Ref": "VPCSecurityGroupIdList"}]}]
+    },
+    "XRAYEnabled": {"Fn::Equals": [{"Ref": "XraySetting"}, "TRUE"]}
+  },
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "QnABot nested export resources",
+  "Outputs": {},
+  "Parameters": {
+    "CFNLambda": {"Type": "String"},
+    "CFNInvokePolicy": {"Type": "String"},
+    "BootstrapBucket": {"Type": "String"},
+    "BootstrapPrefix": {"Type": "String"},
+    "VarIndex": {"Type": "String"},
+    "EsEndpoint": {"Type": "String"},
+    "EsProxyLambda": {"Type": "String"},
+    "ExportBucket": {"Type": "String"},
+    "LexVersion": {"Type": "String"},
+    "FallbackIntent": {"Type": "String"},
+    "Intent": {"Type": "String"},
+    "BotName": {"Type": "String"},
+    "LexV2BotName": {"Type": "String"},
+    "LexV2BotId": {"Type": "String"},
+    "LexV2BotAlias": {"Type": "String"},
+    "LexV2BotAliasId": {"Type": "String"},
+    "LexV2BotLocaleIds": {"Type": "String"},
+    "Api": {"Type": "String"},
+    "ApiRootResourceId": {"Type": "String"},
+    "Encryption": {"Type": "String"},
+    "Stage": {"Type": "String"},
+    "ApiDeploymentId": {"Type": "String"},
+    "DefaultQnABotSettings": {"Type": "String"},
+    "CustomQnABotSettings": {"Type": "String"},
+    "KendraCrawlerSnsTopic": {"Type": "String"},
+    "VPCSubnetIdList": {"Type": "String"},
+    "VPCSecurityGroupIdList": {"Type": "String"},
+    "XraySetting": {"Type": "String"}
+  }
+}

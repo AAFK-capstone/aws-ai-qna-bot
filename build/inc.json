@@ -1,0 +1,13 @@
+{
+  "capstone": {
+    "dev": {
+      "dev-bootstrap": 3,
+      "dev-master": 2
+    }
+  },
+  "default": {
+    "dev": {
+      "dev-bootstrap": 1
+    }
+  }
+}

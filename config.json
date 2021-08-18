@@ -1,0 +1,12 @@
+{
+  "region": "us-east-1",
+  "profile": "",
+  "publicBucket": "aws-bigdata-blog",
+  "publicPrefix": "artifacts/aws-ai-qna-bot",
+  "devEmail": "",
+  "devEncryption": "UNENCRYPTED",
+  "devPublicOrPrivate": "PUBLIC",
+  "namespace": "dev",
+  "LexBotVersion": "LexV1 and LexV2",
+  "stackNamePrefix": "QNA"
+}

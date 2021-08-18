@@ -1,0 +1,253 @@
+{
+  "Resources": {
+    "PostUpgradeImport": {
+      "Type": "Custom::PostUpgradeImport",
+      "DependsOn": ["ImportStepLambda"],
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "importbucket": {"Ref": "ImportBucket"},
+        "exportbucket": {"Ref": "ExportBucket"},
+        "id": "ExportAll_QnABot_v4.7.2.json",
+        "index": {"Ref": "VarIndex"},
+        "encryption": {"Ref": "Encryption"},
+        "es_endpoint": {"Ref": "EsEndpoint"}
+      }
+    },
+    "PostUpgradeImportMetrics": {
+      "Type": "Custom::PostUpgradeImport",
+      "DependsOn": ["ImportStepLambda"],
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "importbucket": {"Ref": "ImportBucket"},
+        "exportbucket": {"Ref": "ExportBucket"},
+        "id": "ExportAll_QnABot_v4.7.2_metrics.json",
+        "index": {"Ref": "MetricsIndex"},
+        "encryption": {"Ref": "Encryption"},
+        "es_endpoint": {"Ref": "EsEndpoint"}
+      }
+    },
+    "PostUpgradeImportFeedback": {
+      "Type": "Custom::PostUpgradeImport",
+      "DependsOn": ["ImportStepLambda"],
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "importbucket": {"Ref": "ImportBucket"},
+        "exportbucket": {"Ref": "ExportBucket"},
+        "id": "ExportAll_QnABot_v4.7.2_feedback.json",
+        "index": {"Ref": "FeedbackIndex"},
+        "encryption": {"Ref": "Encryption"},
+        "es_endpoint": {"Ref": "EsEndpoint"}
+      }
+    },
+    "ImportTriggerFromS3": {
+      "Type": "Custom::S3Lambda",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "ImportBucket"},
+        "NotificationConfiguration": {
+          "LambdaFunctionConfigurations": [
+            {
+              "LambdaFunctionArn": {"Fn::GetAtt": ["ImportStartLambda", "Arn"]},
+              "Events": ["s3:ObjectCreated:*"],
+              "Filter": {
+                "Key": {"FilterRules": [{"Name": "prefix", "Value": "data"}]}
+              }
+            },
+            {
+              "LambdaFunctionArn": {"Fn::GetAtt": ["ImportStepLambda", "Arn"]},
+              "Events": ["s3:ObjectCreated:*"],
+              "Filter": {
+                "Key": {"FilterRules": [{"Name": "prefix", "Value": "status"}]}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ImportStartPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {"Fn::GetAtt": ["ImportStartLambda", "Arn"]},
+        "Action": "lambda:InvokeFunction",
+        "Principal": "s3.amazonaws.com",
+        "SourceAccount": {"Ref": "AWS::AccountId"},
+        "SourceArn": {"Fn::Sub": "arn:aws:s3:::${ImportBucket}"}
+      }
+    },
+    "ImportStepPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {"Fn::GetAtt": ["ImportStepLambda", "Arn"]},
+        "Action": "lambda:InvokeFunction",
+        "Principal": "s3.amazonaws.com",
+        "SourceAccount": {"Ref": "AWS::AccountId"},
+        "SourceArn": {"Fn::Sub": "arn:aws:s3:::${ImportBucket}"}
+      }
+    },
+    "ImportCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/import.zip"},
+        "BuildDate": "2021-08-17T02:31:34.692Z"
+      }
+    },
+    "ImportStartLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/import.zip"},
+          "S3ObjectVersion": {"Ref": "ImportCodeVersion"}
+        },
+        "Environment": {
+          "Variables": {
+            "STRIDE": "1000000",
+            "ES_INDEX": {"Ref": "VarIndex"},
+            "ES_METRICSINDEX": {"Ref": "MetricsIndex"},
+            "ES_FEEDBACKINDEX": {"Ref": "FeedbackIndex"},
+            "ES_ENDPOINT": {"Ref": "EsEndpoint"},
+            "ES_PROXY": {"Ref": "EsProxyLambda"}
+          }
+        },
+        "Handler": "index.start",
+        "MemorySize": "1024",
+        "Role": {"Fn::GetAtt": ["ImportRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 300,
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Tags": [{"Key": "Type", "Value": "Import"}]
+      }
+    },
+    "ImportStepLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/import.zip"},
+          "S3ObjectVersion": {"Ref": "ImportCodeVersion"}
+        },
+        "Environment": {
+          "Variables": {
+            "ES_INDEX": {"Ref": "VarIndex"},
+            "ES_METRICSINDEX": {"Ref": "MetricsIndex"},
+            "ES_FEEDBACKINDEX": {"Ref": "FeedbackIndex"},
+            "ES_ENDPOINT": {"Ref": "EsEndpoint"},
+            "ES_PROXY": {"Ref": "EsProxyLambda"}
+          }
+        },
+        "Handler": "index.step",
+        "MemorySize": "1024",
+        "Role": {"Fn::GetAtt": ["ImportRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 300,
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Tags": [{"Key": "Type", "Value": "Import"}]
+      }
+    },
+    "ImportRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+          "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess",
+          {"Ref": "ImportPolicy"}
+        ]
+      }
+    },
+    "ImportPolicy": {
+      "Type": "AWS::IAM::ManagedPolicy",
+      "Properties": {
+        "PolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Action": ["s3:*"],
+              "Resource": [{"Fn::Sub": "arn:aws:s3:::${ImportBucket}*"}]
+            },
+            {
+              "Effect": "Allow",
+              "Action": ["lambda:InvokeFunction"],
+              "Resource": [{"Ref": "EsProxyLambda"}]
+            }
+          ]
+        }
+      }
+    },
+    "ImportClear": {
+      "Type": "Custom::S3Clear",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "ImportBucket"}
+      }
+    }
+  },
+  "Conditions": {
+    "VPCEnabled": {
+      "Fn::Not": [{"Fn::Equals": ["", {"Ref": "VPCSecurityGroupIdList"}]}]
+    },
+    "XRAYEnabled": {"Fn::Equals": [{"Ref": "XraySetting"}, "TRUE"]}
+  },
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "QnABot nested import resources",
+  "Outputs": {},
+  "Parameters": {
+    "CFNLambda": {"Type": "String"},
+    "CFNInvokePolicy": {"Type": "String"},
+    "BootstrapBucket": {"Type": "String"},
+    "BootstrapPrefix": {"Type": "String"},
+    "EsEndpoint": {"Type": "String"},
+    "EsProxyLambda": {"Type": "String"},
+    "ImportBucket": {"Type": "String"},
+    "ExportBucket": {"Type": "String"},
+    "VarIndex": {"Type": "String"},
+    "MetricsIndex": {"Type": "String"},
+    "FeedbackIndex": {"Type": "String"},
+    "Encryption": {"Type": "String"},
+    "VPCSubnetIdList": {"Type": "String"},
+    "VPCSecurityGroupIdList": {"Type": "String"},
+    "XraySetting": {"Type": "String"}
+  }
+}

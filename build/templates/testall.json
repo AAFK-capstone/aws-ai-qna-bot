@@ -1,0 +1,158 @@
+{
+  "Resources": {
+    "TestAllTrigger": {
+      "Type": "Custom::S3Lambda",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "TestAllBucket"},
+        "NotificationConfiguration": {
+          "LambdaFunctionConfigurations": [
+            {
+              "LambdaFunctionArn": {"Fn::GetAtt": ["TestAllStepLambda", "Arn"]},
+              "Events": ["s3:ObjectCreated:*"],
+              "Filter": {
+                "Key": {"FilterRules": [{"Name": "prefix", "Value": "status"}]}
+              }
+            }
+          ]
+        }
+      }
+    },
+    "TestAllStepPermission": {
+      "Type": "AWS::Lambda::Permission",
+      "Properties": {
+        "FunctionName": {"Fn::GetAtt": ["TestAllStepLambda", "Arn"]},
+        "Action": "lambda:InvokeFunction",
+        "Principal": "s3.amazonaws.com",
+        "SourceAccount": {"Ref": "AWS::AccountId"},
+        "SourceArn": {"Fn::Sub": "arn:aws:s3:::${TestAllBucket}"}
+      }
+    },
+    "TestAllCodeVersion": {
+      "Type": "Custom::S3Version",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "BootstrapBucket"},
+        "Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/testall.zip"},
+        "BuildDate": "2021-08-17T02:31:42.258Z"
+      }
+    },
+    "TestAllStepLambda": {
+      "Type": "AWS::Lambda::Function",
+      "Properties": {
+        "Code": {
+          "S3Bucket": {"Ref": "BootstrapBucket"},
+          "S3Key": {"Fn::Sub": "${BootstrapPrefix}/lambda/testall.zip"},
+          "S3ObjectVersion": {"Ref": "TestAllCodeVersion"}
+        },
+        "Environment": {
+          "Variables": {
+            "ES_INDEX": {"Ref": "VarIndex"},
+            "ES_ENDPOINT": {"Ref": "EsEndpoint"},
+            "ES_PROXY": {"Ref": "EsProxyLambda"},
+            "LEXV2_BOT_ID": {"Ref": "LexV2BotId"},
+            "LEXV2_BOT_ALIAS_ID": {"Ref": "LexV2BotAliasId"}
+          }
+        },
+        "Handler": "index.step",
+        "MemorySize": "1280",
+        "Role": {"Fn::GetAtt": ["TestAllRole", "Arn"]},
+        "Runtime": "nodejs12.x",
+        "Timeout": 900,
+        "VpcConfig": {
+          "Fn::If": [
+            "VPCEnabled",
+            {
+              "SubnetIds": {"Fn::Split": [",", {"Ref": "VPCSubnetIdList"}]},
+              "SecurityGroupIds": {
+                "Fn::Split": [",", {"Ref": "VPCSecurityGroupIdList"}]
+              }
+            },
+            {"Ref": "AWS::NoValue"}
+          ]
+        },
+        "TracingConfig": {
+          "Fn::If": ["XRAYEnabled", {"Mode": "Active"}, {"Ref": "AWS::NoValue"}]
+        },
+        "Tags": [{"Key": "Type", "Value": "TestAll"}]
+      }
+    },
+    "TestAllRole": {
+      "Type": "AWS::IAM::Role",
+      "Properties": {
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Effect": "Allow",
+              "Principal": {"Service": "lambda.amazonaws.com"},
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Path": "/",
+        "ManagedPolicyArns": [
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+          "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole",
+          "arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess"
+        ],
+        "Policies": [
+          {
+            "PolicyName": "TestAllPolicy",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": ["s3:*"],
+                  "Resource": [{"Fn::Sub": "arn:aws:s3:::${TestAllBucket}*"}]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": ["lambda:InvokeFunction"],
+                  "Resource": [{"Ref": "EsProxyLambda"}]
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": ["lex:RecognizeText"],
+                  "Resource": ["*"]
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "TestAllClear": {
+      "Type": "Custom::S3Clear",
+      "Properties": {
+        "ServiceToken": {"Ref": "CFNLambda"},
+        "Bucket": {"Ref": "TestAllBucket"}
+      }
+    }
+  },
+  "Conditions": {
+    "VPCEnabled": {
+      "Fn::Not": [{"Fn::Equals": ["", {"Ref": "VPCSecurityGroupIdList"}]}]
+    },
+    "XRAYEnabled": {"Fn::Equals": [{"Ref": "XraySetting"}, "TRUE"]}
+  },
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "QnABot nested testall resources",
+  "Outputs": {},
+  "Parameters": {
+    "CFNLambda": {"Type": "String"},
+    "CFNInvokePolicy": {"Type": "String"},
+    "LexV2BotId": {"Type": "String"},
+    "LexV2BotAliasId": {"Type": "String"},
+    "BootstrapBucket": {"Type": "String"},
+    "BootstrapPrefix": {"Type": "String"},
+    "VarIndex": {"Type": "String"},
+    "EsEndpoint": {"Type": "String"},
+    "EsProxyLambda": {"Type": "String"},
+    "TestAllBucket": {"Type": "String"},
+    "VPCSubnetIdList": {"Type": "String"},
+    "VPCSecurityGroupIdList": {"Type": "String"},
+    "XraySetting": {"Type": "String"}
+  }
+}
