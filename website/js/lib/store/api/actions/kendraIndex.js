@@ -43,6 +43,26 @@ module.exports={
             method:'post'
         })
     },
+    runFaqScraper(context, opts) {
+      return context.dispatch('_request', {
+        url:context.rootState.info._links.crawler.href+`/runFaqScraper`,
+        method:'post',
+      })
+    },
+    runBlogScraper(context, opts) {
+      return context.dispatch('_request', {
+        url:context.rootState.info._links.crawler.href+`/runBlogScraper`,
+        method:'post',
+        body:opts
+      })
+    },
+    runCaseStudyScraper(context, opts) {
+      return context.dispatch('_request', {
+        url:context.rootState.info._links.crawler.href+`/runCaseStudyScraper`,
+        method:'post',
+        body:opts
+      })
+    }
 }
 
 

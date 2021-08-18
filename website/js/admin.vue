@@ -142,6 +142,13 @@ module.exports={
         href:"#/kendraIndex"
       },
       {
+        title:"Inbuilt AWS Webscrapers",
+        id:"inbuiltWebScraper",
+        subTitle:"Index AWS Pages",
+        icon:"search",
+        href:"#/inbuiltWebScraper"
+      },
+      {
         title:"Alexa",
         id:"alexa",
         subTitle:"Instructions for setting up an Alexa Skill",

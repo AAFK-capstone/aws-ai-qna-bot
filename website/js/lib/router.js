@@ -41,6 +41,11 @@ module.exports={
             name:"Kendra Web Page Indexing",
             component:require('../components/kendraIndex.vue').default
         },
+        {
+            path:'/inbuiltWebScraper',
+            name:"Inbuilt AWS Webscrapers",
+            component:require('../components/inbuiltScraper.vue').default
+        },
         {   path:'/export',
             name:"export",
             component:require('../components/export.vue').default
