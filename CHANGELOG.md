@@ -12,3 +12,7 @@
   - For improving chatbot dialog flow and integrating specialty bots:
     - To allow specialty chatbot to ask main bot for answers if it is unable to find an answer, `FALLBACK_TO_MAIN_BOT_WHEN_ANSWER_NOT_FOUND = true`
     - To get specialty chatbot to autoexit and go back to main bot if it cannot find an answer, `AUTO_EXIT_SPECIALTY_BOT_WHEN_ANSWER_NOT_FOUND = true`
+  - For improving data collection and logging:
+    - Log custom session attributes, `LOG_CUSTOM_SESSION_ATTRIBUTES = true`
+    - Prefix for custom session attributes to be logged - this is required if LOG_CUSTOM_SESSION_ATTRIBUTES is set to true, otherwise no session attributes will be logged; `LOG_CUSTOM_SESSION_ATTRIBUTES_PREFIX = "PREFIX FOR CUSTOM SESSION ATTRIBUTES"`
+    
