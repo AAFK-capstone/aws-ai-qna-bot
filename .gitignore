@@ -107,7 +107,11 @@ dist
 .env.*
 .env
 
-# .DS_Store files
+# build files
+**/build/*
+build/*
+
+# OS generated files
 .DS_Store
 **/.DS_Store
 .Trashes
