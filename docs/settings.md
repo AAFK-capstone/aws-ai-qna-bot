@@ -71,3 +71,5 @@
 | AWS_TRANSLATE_MSG | text | Shows user-defined message when answers have been translated with Amazon Translate, default = "Answer dynamically translated by Amazon Translate"
 | FALLBACK_TO_MAIN_BOT_WHEN_ANSWER_NOT_FOUND | true or false | To allow specialty chatbot to ask main bot for answers if it is unable to find an answer
 | AUTO_EXIT_SPECIALTY_BOT_WHEN_ANSWER_NOT_FOUND | true or false | To get specialty chatbot to autoexit and go back to main bot if it cannot find an answer
+| LOG_CUSTOM_SESSION_ATTRIBUTES | true or false | For QnA bot to log custom session attributes. However, if LOG_CUSTOM_SESSION_ATTRIBUTES_PREFIX is undefined, no attributes will be logged.
+| LOG_CUSTOM_SESSION_ATTRIBUTES_PREFIX | text | The prefix for custom session attributes, e.g. LOG_CUSTOM_SESSION_ATTRIBUTES_PREFIX="Customer" will cause all custom session attributes beginning with Customer to be logged. 
